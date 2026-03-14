@@ -303,6 +303,7 @@ interface CloudCodeAssistResponseChunk {
 				}>;
 			};
 			finishReason?: string;
+			groundingMetadata?: unknown;
 		}>;
 		usageMetadata?: {
 			promptTokenCount?: number;
@@ -681,6 +682,17 @@ export const streamGoogleGeminiCli: StreamFunction<"google-gemini-cli", GoogleGe
 								if (output.content.some((b) => b.type === "toolCall")) {
 									output.stopReason = "toolUse";
 								}
+							}
+
+							if (candidate?.groundingMetadata) {
+								const block: TextContent = { type: "text", text: "" };
+								output.content.push(block);
+								stream.push({
+									type: "content_block",
+									contentIndex: output.content.length - 1,
+									block: { type: "grounding_metadata", metadata: candidate.groundingMetadata },
+									partial: output,
+								});
 							}
 
 							if (responseData.usageMetadata) {

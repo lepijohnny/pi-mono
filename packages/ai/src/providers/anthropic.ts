@@ -299,6 +299,15 @@ export const streamAnthropic: StreamFunction<"anthropic-messages", AnthropicOpti
 						};
 						output.content.push(block);
 						stream.push({ type: "toolcall_start", contentIndex: output.content.length - 1, partial: output });
+					} else {
+						const block: Block = { type: "text", text: "", index: event.index };
+						output.content.push(block);
+						stream.push({
+							type: "content_block",
+							contentIndex: output.content.length - 1,
+							block: event.content_block,
+							partial: output,
+						});
 					}
 				} else if (event.type === "content_block_delta") {
 					if (event.delta.type === "text_delta") {
