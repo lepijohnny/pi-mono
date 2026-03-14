@@ -13,6 +13,31 @@ import type {
 	ResponseStreamEvent,
 } from "openai/resources/responses/responses.js";
 import { calculateCost } from "../models.js";
+
+async function* abortableStream<T>(source: AsyncIterable<T>, signal?: AbortSignal): AsyncGenerator<T> {
+	if (!signal) {
+		yield* source;
+		return;
+	}
+	const iterator = source[Symbol.asyncIterator]();
+	const abortPromise = new Promise<never>((_, reject) => {
+		if (signal.aborted) {
+			reject(new DOMException("Aborted", "AbortError"));
+			return;
+		}
+		signal.addEventListener("abort", () => reject(new DOMException("Aborted", "AbortError")), { once: true });
+	});
+	try {
+		while (true) {
+			const result = await Promise.race([iterator.next(), abortPromise]);
+			if (result.done) break;
+			yield result.value;
+		}
+	} finally {
+		iterator.return?.();
+	}
+}
+
 import type {
 	Api,
 	AssistantMessage,
@@ -284,14 +309,14 @@ export async function processResponsesStream<TApi extends Api>(
 	output: AssistantMessage,
 	stream: AssistantMessageEventStream,
 	model: Model<TApi>,
-	options?: OpenAIResponsesStreamOptions,
+	options?: OpenAIResponsesStreamOptions & { signal?: AbortSignal },
 ): Promise<void> {
 	let currentItem: ResponseReasoningItem | ResponseOutputMessage | ResponseFunctionToolCall | null = null;
 	let currentBlock: ThinkingContent | TextContent | (ToolCall & { partialJson: string }) | null = null;
 	const blocks = output.content;
 	const blockIndex = () => blocks.length - 1;
 
-	for await (const event of openaiStream) {
+	for await (const event of abortableStream(openaiStream, options?.signal)) {
 		if (event.type === "response.created") {
 			output.responseId = event.response.id;
 		} else if (event.type === "response.output_item.added") {
